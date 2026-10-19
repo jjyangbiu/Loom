@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Loom 核心流程梳理</title>
+<style>
+  :root {
+    --bg: #f6f8fa;
+    --card: #ffffff;
+    --ink: #1f2328;
+    --muted: #57606a;
+    --accent: #0969da;
+    --accent-soft: #ddf4ff;
+    --border: #d0d7de;
+    --code-bg: #f6f8fa;
+    --ok: #1a7f37;
+    --no: #cf222e;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.75;
+  }
+  .layout { display: flex; max-width: 1200px; margin: 0 auto; gap: 24px; padding: 24px 16px; }
+  nav.toc {
+    position: sticky; top: 24px; align-self: flex-start;
+    width: 240px; flex: none; background: var(--card);
+    border: 1px solid var(--border); border-radius: 10px; padding: 16px;
+    font-size: 14px; max-height: calc(100vh - 48px); overflow: auto;
+  }
+  nav.toc h2 { margin: 0 0 8px; font-size: 14px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+  nav.toc a { display: block; color: var(--ink); text-decoration: none; padding: 4px 8px; border-radius: 6px; }
+  nav.toc a:hover { background: var(--accent-soft); color: var(--accent); }
+  main { flex: 1; min-width: 0; }
+  header.hero {
+    background: linear-gradient(135deg, #0d1b2a 0%, #1b3a5c 60%, #0969da 100%);
+    color: #fff; border-radius: 14px; padding: 32px; margin-bottom: 24px;
+  }
+  header.hero h1 { margin: 0 0 8px; font-size: 28px; }
+  header.hero p { margin: 4px 0; color: #c9d7e6; font-size: 15px; }
+  section.card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 24px 28px; margin-bottom: 20px;
+  }
+  h2.sec {
+    margin: 0 0 16px; font-size: 21px; padding-bottom: 10px;
+    border-bottom: 2px solid var(--accent-soft); color: var(--accent);
+  }
+  h3 { font-size: 16.5px; margin: 22px 0 8px; }
+  pre {
+    background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px;
+    padding: 14px 16px; overflow-x: auto; font-size: 13px; line-height: 1.6;
+    font-family: "Cascadia Code", Consolas, "Courier New", monospace;
+  }
+  code { background: var(--code-bg); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; font-size: .9em; font-family: Consolas, monospace; }
+  pre code { background: none; border: none; padding: 0; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 14px; }
+  th, td { border: 1px solid var(--border); padding: 8px 12px; text-align: left; vertical-align: top; }
+  th { background: var(--accent-soft); color: #0a3069; }
+  tr:nth-child(even) td { background: #fafbfc; }
+  .yes { color: var(--ok); font-weight: 600; }
+  .no { color: var(--no); font-weight: 600; }
+  .note {
+    border-left: 4px solid var(--accent); background: var(--accent-soft);
+    padding: 10px 16px; border-radius: 0 8px 8px 0; margin: 12px 0; font-size: 14px;
+  }
+  .flow {
+    display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0;
+  }
+  .flow .step {
+    background: var(--card); border: 1.5px solid var(--accent); color: #0a3069;
+    border-radius: 999px; padding: 5px 14px; font-size: 13.5px; font-weight: 500; white-space: nowrap;
+  }
+  .flow .arrow { color: var(--muted); font-weight: 700; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 900px) { .grid2 { grid-template-columns: 1fr; } nav.toc { display: none; } }
+  footer { text-align: center; color: var(--muted); font-size: 13px; padding: 16px 0 32px; }
+</style>
+</head>
+<body>
+<div class="layout">
+
+<nav class="toc">
+  <h2>目录</h2>
+  <a href="#arch">一、总体架构</a>
+  <a href="#pipeline">二、首建生成主流程</a>
+  <a href="#loop">三、智能体循环</a>
+  <a href="#defense">四、迭代可靠性防御链</a>
+  <a href="#memory">五、记忆管理机制</a>
+  <a href="#output">六、成果出口</a>
+  <a href="#sse">七、SSE 事件协议</a>
+  <a href="#files">附：关键文件索引</a>
+</nav>
+
+<main>
+<header class="hero">
+  <h1>Loom 核心流程梳理</h1>
+  <p>「对话即生成单页应用」的智能体平台：前端 Vue3 SPA + 后端 FastAPI。</p>
+  <p>智能体通过工具调用循环在文件沙箱里写文件，生成结果可预览、可迭代、可发布、可克隆。</p>
+  <p>本文覆盖：① 端到端核心流程　② 智能体循环的控制方式　③ 记忆管理机制</p>
+</header>
+
+<section class="card" id="arch">
+<h2 class="sec">一、总体架构</h2>
+<pre>前端 SPA (Vue3 + Pinia)                    后端 FastAPI
+┌─────────────────────┐   REST + SSE    ┌──────────────────────────────┐
+│ api/client.ts (JWT) │ ──────────────► │ routers/{auth,projects,      │
+│ api/sse.ts (fetch + │ ◄────────────── │           publish,world}.py  │
+│  ReadableStream)    │   data:{json}   │   ├─ agent/ (循环/工具/意图)  │
+│ views/ProjectPage   │                 │   ├─ rag/  (模板向量库)       │
+└─────────────────────┘                 │   └─ SQLite + 文件沙箱 + Milvus│
+                                        └──────────────────────────────┘</pre>
+<ul>
+  <li>应用装配在 <code>backend/app/main.py</code> 的 <code>create_app</code> 工厂：把 Settings、模型工厂、嵌入工厂、知识库、限流器挂到 <code>app.state</code> 供各层读取。</li>
+  <li>前端因 EventSource 无法携带 Authorization，用 <code>fetch + ReadableStream</code> 自实现 SSE 客户端（<code>frontend/src/api/sse.ts</code>），按 <code>data: {json}</code> 行协议解析事件。</li>
+  <li>安全边界：<code>security.py</code>（JWT + bcrypt）保护数据，<code>serving.serve_project_file</code>（沙箱路径白名单）保护文件系统。</li>
+</ul>
+</section>
+
+<section class="card" id="pipeline">
+<h2 class="sec">二、首建生成主流程</h2>
+<p>入口：<code>POST /api/projects/{id}/messages</code>（<code>routers/projects.py</code> 的 <code>send_message</code>）。消息先过<strong>限流</strong>（每用户每小时额度 + 全局并发，超限 429 并附 <code>Retry-After</code>），再按项目模式和状态<strong>阶段分流</strong>。</p>
+
+<h3>2.1 工程师模式（engineer）</h3>
+<div class="flow">
+  <span class="step">用户首条消息</span><span class="arrow">→</span>
+  <span class="step">需求澄清 _clarify_stream</span><span class="arrow">→</span>
+  <span class="step">需求共识卡片</span><span class="arrow">→</span>
+  <span class="step">确认 /consensus/confirm</span><span class="arrow">→</span>
+  <span class="step">工程师智能体生成</span><span class="arrow">→</span>
+  <span class="step">多文件落盘 + 快照</span>
+</div>
+
+<h3>2.2 团队模式（team）—— 五阶段流水线</h3>
+<div class="flow">
+  <span class="step">需求澄清</span><span class="arrow">→</span>
+  <span class="step">共识确认</span><span class="arrow">→</span>
+  <span class="step">需求规格 _spec_stream</span><span class="arrow">→</span>
+  <span class="step">规格确认</span><span class="arrow">→</span>
+  <span class="step">工单拆解 _break_stream</span><span class="arrow">→</span>
+  <span class="step">清单确认</span><span class="arrow">→</span>
+  <span class="step">检查点串行执行</span>
+</div>
+<p>执行阶段（<code>_exec_tickets_stream</code>）：按依赖序逐单执行，每单完成建一个检查点快照，失败可从该单重试（<code>/tickets/resume</code>）。</p>
+
+<h3>2.3 关键设计点</h3>
+<table>
+  <tr><th>设计点</th><th>说明</th></tr>
+  <tr><td>确认门（gate）</td><td>每阶段产物（共识/规格/工单清单）都是待确认卡片；确认接口在<strong>项目锁内复查状态</strong>，并发双击不会触发两次生成；确认消息以 <code>kind=*_confirm</code> 落对话历史</td></tr>
+  <tr><td>阶段智能体无文件工具</td><td>澄清/规格/拆单智能体唯一工具是 <code>submit_*</code> 类结构化提交（解析失败把错误回喂模型自行修正）；只有工程师智能体拥有文件工具</td></tr>
+  <tr><td>限流只扣一次</td><td>名额在首条消息时扣定，流水线内的后续阶段（澄清续轮、各确认、拆单）不重复计数</td></tr>
+  <tr><td>执行期拦截</td><td>团队模式工单执行期间，普通消息以引导拦截（<code>exec_guide</code>），不污染执行流</td></tr>
+</table>
+</section>
+
+<section class="card" id="loop">
+<h2 class="sec">三、智能体循环（生成引擎）</h2>
+<p>核心：<code>backend/app/agent/loop.py</code> 的 <code>run_generation</code>，所有生成阶段共用。</p>
+<pre>System 提示 + 历史 + 用户输入
+  → 模型流式输出（ThinkSplitter 把 &lt;think&gt; 块拆成独立 thinking 事件）
+  → 有 tool_calls？
+      有 → 沙箱工具执行（write_file / edit_file / read_file / search_templates …）
+           → 结果作为 ToolMessage 回喂 → 继续循环（最多 max_steps 步，默认预算 100）
+      无 → final_text_hook 收尾核验
+           · 返回字符串 → 作为 HumanMessage 回喂，继续循环（防「口头完成」）
+           · 返回 None  → yield done，正常出口
+  → 循环耗尽 → error(reason="max_steps_exhausted")，路由层据此走兜底收尾</pre>
+
+<h3>3.1 是否用 LangChain / LangGraph？</h3>
+<div class="note"><strong>循环是手写的：没有 LangGraph，也没有 AgentExecutor。</strong> LangChain 只作「零件级」适配层。</div>
+<table>
+  <tr><th>用途</th><th>是否用 LangChain</th><th>位置</th></tr>
+  <tr><td>LLM 客户端（ChatOpenAI + bind_tools + astream）</td><td class="yes">✅ langchain-openai</td><td><code>agent/model.py</code></td></tr>
+  <tr><td>消息类型（System/Human/Tool/AIMessageChunk）</td><td class="yes">✅ langchain-core</td><td><code>agent/loop.py</code></td></tr>
+  <tr><td>工具 schema 声明（@tool 装饰器）</td><td class="yes">✅ langchain-core</td><td><code>agent/tools.py</code></td></tr>
+  <tr><td>Agent 编排 / 状态图 / 循环控制</td><td class="no">❌ 全部手写</td><td><code>loop.py</code> + <code>routers/projects.py</code></td></tr>
+</table>
+<p>依赖清单只有 <code>langchain-openai</code>、<code>langchain-community</code>，无 <code>langgraph</code>。工具执行也没走 LangChain 的 ToolNode——<code>execute_tool</code> 手写：按名字遍历工具、<code>inspect.signature</code> 校验参数、异常捕获后转成失败文本回喂模型（<code>SandboxViolation</code> 不中断循环）。</p>
+
+<h3>3.2 关键控制流技巧</h3>
+<ol>
+  <li><strong>Python 异常做控制流信号</strong>：<code>submit_*</code> 工具被执行时抛专用异常（如 <code>_SubmitTicketsInvoked</code>），沿生成器向上传播，由路由层捕获后携 JSON 终止循环——不需要图节点跳转。</li>
+  <li><strong><code>final_text_hook</code> 收尾钩子</strong>：循环本身不含业务判断；自洽性核验（申报改动 vs 磁盘真实改动）、回喂次数上限等降级链逻辑全部由路由层注入（工单 0025 用纯集合运算取代了早期的中文措辞检测）。</li>
+  <li><strong>多阶段编排是数据库推导的状态机，不是图</strong>：<code>send_message</code> 按 DB 中消息的 pending 状态分流到不同 <code>_*_stream</code> 函数，每个函数内部各跑一遍 <code>run_generation</code>（各自独立工具集）。</li>
+  <li><strong>模型无绑定（鸭子类型）</strong>：循环只依赖 <code>bind_tools</code> / <code>astream</code> / <code>ainvoke</code> 约定，测试用 <code>tests/fake_model.py</code> 可编程伪模型走同一接口注入，全链路离线可测。</li>
+  <li><strong>重试语义</strong>：模型调用失败带指数退避重试，但<strong>一旦已外发内容就不再重试</strong>（避免半截流重复），直接以 error 事件收尾。</li>
+  <li><strong>思考流拆分</strong>：MiniMax 行内 <code>&lt;think&gt;</code> 标签由 <code>ThinkSplitter</code> 增量拆分（标签可能被切断在相邻 chunk，尾部疑似标签前缀的部分暂留缓冲区）；Qwen3 的 <code>reasoning_content</code> 由 <code>ThinkingChatOpenAI</code> 子类补采（langchain-openai 基类会丢弃该字段）。</li>
+</ol>
+</section>
+
+<section class="card" id="defense">
+<h2 class="sec">四、对话式迭代的可靠性防御链（ADR 0004 / 0005）</h2>
+<p>已有文件后的<strong>用户对话轮</strong>是唯一进意图分类器（<code>agent/intent.py</code>）的入口：</p>
+<ul>
+  <li><strong>咨询类</strong> → 只绑只读工具集（能力缺失代替劝说，物理上写不了文件），流式纯文本收尾，不产卡片、不核验、不入日志、不留快照；</li>
+  <li><strong>修改类</strong> → 工程师智能体迭代，收尾经过多层防御：</li>
+</ul>
+<table>
+  <tr><th>层</th><th>机制</th><th>说明</th></tr>
+  <tr><td>1</td><td>轮次产物终结出口</td><td><code>submit_turn_result</code> 是唯一合法收尾出口，模型必须显式申报本轮改动（intent / summary / changed_files）</td></tr>
+  <tr><td>2</td><td>自洽性核验（工单 0025）</td><td>比对「申报的改动集合」与「磁盘真实改动集合」，纯集合运算不看措辞；不一致回喂一次（轮级预算，防死循环）</td></tr>
+  <tr><td>3</td><td>意图误判二次防线</td><td>分类器把明确带改动动词的诉求判成 consult 时，用确定性关键词规则救回 modify_code</td></tr>
+  <tr><td>4</td><td>超步兜底</td><td><code>max_steps_exhausted</code> 时磁盘已有的真实改动不被没收，照常收尾建快照</td></tr>
+  <tr><td>5</td><td>零交付闸（工单 0029）</td><td>团队工单执行轮磁盘零改动只有一条合法出口——经工单级确认回喂后的结构化 no_change；其余零改动一律按失败处置</td></tr>
+</table>
+</section>
+
+<section class="card" id="memory">
+<h2 class="sec">五、记忆管理机制</h2>
+<div class="note"><strong>没有用向量库做对话记忆</strong>（Milvus 只用于 RAG 模板检索），也没有 LangChain Memory 组件。记忆是分层设计：短期靠对话窗口，长期靠迭代日志，事实基准靠磁盘指纹。</div>
+
+<h3>5.1 第 1 层：对话历史（短期记忆）</h3>
+<ul>
+  <li>每条消息（用户话、智能体输出、工具事件、思考片段）全量落 SQLite <code>Message</code> 表，<strong>持久化永不截断</strong>，前端刷新可完整回看；</li>
+  <li>喂给模型的只有 <code>_llm_history</code> 组装的<strong>最近 10 轮问答</strong>（<code>agent_history_window=10</code>），且按 <code>kind</code> 过滤：
+    <ul>
+      <li><code>event</code>（工具事件）/ <code>thinking</code>（思考）/ <code>ticket</code>（工单进度）/ system 引导 → 不入上下文；</li>
+      <li><code>consensus</code> / <code>spec</code> / <code>tickets</code> / <code>prd</code>（阶段定案产物）→ 以带前缀的 AIMessage 入上下文；</li>
+      <li><code>*_confirm</code>（确认消息，含用户追加意见）→ 以 HumanMessage 入上下文，后续阶段可见。</li>
+    </ul>
+  </li>
+</ul>
+
+<h3>5.2 第 2 层：迭代日志（长期记忆）</h3>
+<p><code>Project.iteration_log</code>（JSON 列），<strong>按「改动」而非「对话轮」累积</strong>（工单 0026）：</p>
+<ul>
+  <li>每轮成功收尾追加一条：<code>{seq, user_text, user_goal(分类器蒸馏), files(真实触及文件), verdict, scope_verdict}</code>；</li>
+  <li>每轮开始读出并渲染进系统提示（<code>build_system_prompt</code>），弥补窗口截断的失忆，避免重复改或漏改；</li>
+  <li><strong>不截断、不聚合</strong>（注释明确算过 token 账：净开销持平或更短，不预先优化）；</li>
+  <li>写入纪律：团队工单执行（<code>record_iteration=False</code>）不读也不写——内部编排不是用户对话轮，避免把工单指令当「用户说」污染后续提示；咨询轮无改动不入日志；超步兜底轮只要磁盘有真实改动也留一条（否则后续轮次无法理解磁盘现状）。</li>
+</ul>
+
+<h3>5.3 第 3 层：磁盘状态即事实基准（防「记忆过时」）</h3>
+<p>不信任模型的叙述性记忆，<strong>以磁盘为权威</strong>（工单 0022）：</p>
+<ul>
+  <li>每轮开始扫描项目目录生成 <code>file_summaries</code>：<strong>路径 + 行数 + 内容哈希</strong>，注入系统提示。哈希的作用：<em>若与记忆中的版本不同，说明记忆已过时，必须 read_file</em>——模型不许凭记忆写 <code>edit_file</code>；</li>
+  <li>同一份扫描复用为<strong>轮前指纹</strong>：轮末自洽性核验拿它与磁盘终态做集合比对，看磁盘不看措辞。</li>
+</ul>
+
+<h3>5.4 第 4 层：单轮内的临时记忆</h3>
+<p><code>run_generation</code> 里的 <code>messages</code> 列表只在内存中活一轮（模型输出、ToolMessage 不断追加），不持久化；断流/取消时尽力把已流出的 thinking 片段落库，供刷新后回看诊断。</p>
+
+<h3>5.5 第 5 层：跨项目记忆（RAG）</h3>
+<p>Milvus Lite 知识库（<code>seed:{key}</code> 模板种子 + <code>pub:{slug}</code> 已发布应用）是跨项目经验库，经 <code>search_templates</code> 工具按需语义检索——服务生成质量，不服务对话连续性。</p>
+
+<h3>5.6 记忆分层总览</h3>
+<table>
+  <tr><th>层</th><th>载体</th><th>生命周期</th><th>注入方式</th></tr>
+  <tr><td>对话窗口</td><td>SQLite <code>Message</code> 表</td><td>全量持久化 / 只喂最近 10 轮</td><td>langchain 消息列表</td></tr>
+  <tr><td>迭代日志</td><td><code>Project.iteration_log</code> JSON 列</td><td>按改动累积、永不截断</td><td>系统提示渲染</td></tr>
+  <tr><td>磁盘指纹</td><td>每轮重扫（路径+行数+哈希）</td><td>每轮刷新</td><td>系统提示 + 轮末核验基准</td></tr>
+  <tr><td>轮内消息</td><td>内存 <code>messages</code> 列表</td><td>单轮</td><td>直接对话上下文</td></tr>
+  <tr><td>RAG 知识库</td><td>Milvus Lite</td><td>跨项目长期</td><td><code>search_templates</code> 工具按需检索</td></tr>
+</table>
+</section>
+
+<section class="card" id="output">
+<h2 class="sec">六、成果出口：预览 / 发布 / 世界</h2>
+<div class="flow">
+  <span class="step">生成落盘</span><span class="arrow">→</span>
+  <span class="step">项目快照（回滚 + Monaco 代码视图 / Diff，上限 50 版）</span><span class="arrow">→</span>
+  <span class="step">预览（/p/ 沙箱直出 + CSP sandbox 头）</span><span class="arrow">→</span>
+  <span class="step">发布（稳定公开链接，沉淀进 RAG）</span><span class="arrow">→</span>
+  <span class="step">应用世界画廊（浏览 + 一键克隆，失败事务性回滚）</span>
+</div>
+</section>
+
+<section class="card" id="sse">
+<h2 class="sec">七、SSE 事件协议（前后端契约）</h2>
+<table>
+  <tr><th>事件</th><th>含义</th></tr>
+  <tr><td><code>text</code> / <code>thinking</code></td><td>正文 / 思考过程增量（打字机效果）</td></tr>
+  <tr><td><code>tool</code> (start/done/error)</td><td>工具调用卡片（参数超长只留摘要，结果截 500 字符）</td></tr>
+  <tr><td><code>clarify</code></td><td>结构化澄清问题（选项卡片）</td></tr>
+  <tr><td><code>consensus</code> / <code>spec</code> / <code>tickets</code></td><td>阶段定案产物卡片</td></tr>
+  <tr><td><code>ticket_progress</code></td><td>团队模式逐单执行进度</td></tr>
+  <tr><td><code>done</code></td><td>本轮结束（可携 verdict / warning / artifact 字段）</td></tr>
+  <tr><td><code>error</code></td><td>失败（可携结构化 reason，如 <code>max_steps_exhausted</code>）</td></tr>
+</table>
+</section>
+
+<section class="card" id="files">
+<h2 class="sec">附：关键文件索引</h2>
+<table>
+  <tr><th>模块</th><th>文件</th></tr>
+  <tr><td>应用装配</td><td><code>backend/app/main.py</code></td></tr>
+  <tr><td>路由 / 阶段分流 / 流水线</td><td><code>backend/app/routers/projects.py</code></td></tr>
+  <tr><td>智能体循环</td><td><code>backend/app/agent/loop.py</code></td></tr>
+  <tr><td>工具与沙箱</td><td><code>backend/app/agent/tools.py</code></td></tr>
+  <tr><td>系统提示拼装</td><td><code>backend/app/agent/prompts.py</code></td></tr>
+  <tr><td>意图分类 / 正确性裁判</td><td><code>backend/app/agent/intent.py</code>、<code>agent/judge.py</code></td></tr>
+  <tr><td>模型工厂</td><td><code>backend/app/agent/model.py</code></td></tr>
+  <tr><td>ORM 模型（记忆载体）</td><td><code>backend/app/models.py</code></td></tr>
+  <tr><td>RAG 知识库</td><td><code>backend/app/rag/{store,seeds,embeddings}.py</code></td></tr>
+  <tr><td>快照 / 发布 / 世界</td><td><code>backend/app/snapshots.py</code>、<code>routers/publish.py</code>、<code>routers/world.py</code></td></tr>
+  <tr><td>前端 SSE 客户端</td><td><code>frontend/src/api/sse.ts</code>、<code>api/client.ts</code></td></tr>
+  <tr><td>架构决策记录</td><td><code>docs/adr/0001–0005</code>、工单规格 <code>docs/tracker/0001–0030</code></td></tr>
+</table>
+</section>
+
+<footer>Loom · 核心流程梳理 · 依据 backend/frontend 源码与 docs/ADR 整理</footer>
+</main>
+</div>
+</body>
+</html>
