@@ -35,7 +35,7 @@ function formatTime(iso: string) {
 <template>
   <div class="world">
     <header class="header">
-      <span class="brand brand-mark">Atoms Demo</span>
+      <span class="brand brand-mark">Loom</span>
       <span class="page-title">App 世界</span>
       <div class="header-right">
         <el-button v-if="loggedIn" text @click="router.push({ name: 'workspace' })">

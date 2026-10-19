@@ -65,7 +65,7 @@ function formatTime(iso: string) {
         </svg>
         App 世界
       </el-button>
-      <span class="brand brand-mark">Atoms Demo</span>
+      <span class="brand brand-mark">Loom</span>
     </header>
 
     <main v-if="app" class="main">

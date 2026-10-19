@@ -1,6 +1,6 @@
-# atoms-demo
+# Loom
 
-Atoms 风格智能体应用生成平台：对话即生成单页应用，支持迭代、预览、发布稳定链接、应用世界画廊与克隆。
+对话即生成单页应用的智能体平台：对话是线，应用是布。支持需求澄清与工单拆解、带改动范围核验的增量迭代、版本回滚、预览、发布稳定链接与应用世界画廊克隆。
 
 - `backend/` — FastAPI + 智能体（工具调用循环）+ RAG（Milvus Lite + MiniMax/OpenAI 兼容 embedding）
 - `frontend/` — Vue 3 + Vite + Pinia 单页应用

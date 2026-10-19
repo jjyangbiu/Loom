@@ -1,4 +1,4 @@
-# CONTEXT — Atoms 风格智能体应用生成平台（atoms-demo）
+# CONTEXT — Loom · 对话即生成单页应用的智能体平台
 
 > 术语表（Glossary）。只收录领域概念，不含实现细节。实现决策见 `docs/adr/`。
 

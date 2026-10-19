@@ -36,7 +36,7 @@ async function onSubmit() {
     <div class="glow glow-b" aria-hidden="true"></div>
 
     <div class="auth-card">
-      <h1 class="brand brand-mark">Atoms Demo</h1>
+      <h1 class="brand brand-mark">Loom</h1>
       <p class="subtitle">智能体驱动的应用生成平台</p>
       <p class="tagline">描述你的想法，智能体为你生成、迭代并发布应用</p>
       <el-form label-position="top" @submit.prevent="onSubmit">

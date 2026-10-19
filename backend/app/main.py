@@ -16,7 +16,7 @@ from .routers import auth, projects, publish, world
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
 
-    app = FastAPI(title="atoms-demo API", version="0.1.0")
+    app = FastAPI(title="Loom API", version="0.1.0")
     app.state.settings = settings
     # 测试可替换为可编程伪模型工厂（见 tests/fake_model.py）
     app.state.model_factory = default_model_factory

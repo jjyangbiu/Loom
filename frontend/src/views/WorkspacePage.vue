@@ -64,7 +64,7 @@ function formatTime(iso: string) {
 <template>
   <div class="workspace">
     <header class="header">
-      <span class="brand brand-mark">Atoms Demo</span>
+      <span class="brand brand-mark">Loom</span>
       <div class="header-right">
         <el-button text data-testid="goto-world" @click="router.push({ name: 'world' })">
           App 世界
